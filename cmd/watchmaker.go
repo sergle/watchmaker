@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/busybox-org/watchmaker"
 )
@@ -66,7 +67,29 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	skew, err := watchmaker.GetSkew(watchmaker.NewConfig(0, offsetTime.Nanoseconds(), clkIds))
+	// Split the offset into whole seconds + sub-second nanoseconds instead of
+	// passing the entire offset as nanoseconds.
+	//
+	// Why this matters: the injected fake_clock_gettime.c / fake_gettimeofday.c
+	// normalize the nanosecond delta with a `while` loop that subtracts 1e9 one
+	// iteration at a time. If the whole offset is handed over as nanoseconds,
+	// that loop runs (offset_in_seconds) times on EVERY clock_gettime/
+	// gettimeofday call the target makes — e.g. ~31.5M iterations for a +1y
+	// skew — which makes the target process visibly slow.
+	//
+	// By keeping the nanosecond delta sub-second here, |nsec_delta| < 1e9, so the
+	// normalize loop runs at most once per call regardless of offset size.
+	//
+	// NOTE: this fixes it at the call site only. The C payload itself is still
+	// O(offset) if some other caller passes a >= 1e9 nanosecond delta (e.g. via
+	// Config.Merge stacking deltas, or a direct NewConfig). The robust fix would
+	// be to replace those `while` loops with div/mod (as fake_time.c already
+	// does); we rely on the split below instead since watchmaker is only used as
+	// a one-shot CLI.
+	deltaSeconds := int64(offsetTime / time.Second)
+	deltaNanoSeconds := int64(offsetTime % time.Second)
+
+	skew, err := watchmaker.GetSkew(watchmaker.NewConfig(deltaSeconds, deltaNanoSeconds, clkIds))
 	if err != nil {
 		log.Fatalln(err)
 	}

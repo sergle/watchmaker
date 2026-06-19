@@ -51,6 +51,8 @@ int fake_gettimeofday(struct timeval *tv, struct timezone *tz)
     int64_t nsec_delta = TV_NSEC_DELTA;
     int64_t billion = 1000000000;
 
+    // See fake_clock_gettime.c: these loops are bounded only because the caller
+    // keeps |nsec_delta| < 1e9. A >= 1e9 delta makes this O(offset) per call.
     while (nsec_delta + tv->tv_usec*1000 > billion)
     {
         sec_delta += 1;

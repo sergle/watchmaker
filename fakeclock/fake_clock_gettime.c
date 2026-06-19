@@ -47,6 +47,11 @@ int fake_clock_gettime(clockid_t clk_id, struct timespec *tp) {
 
     uint64_t clk_id_mask = 1 << clk_id;
     if((clk_id_mask & clock_ids_mask) != 0) {
+        // These loops run once per |nsec_delta|/1e9, i.e. once per second of the
+        // offset. The caller (cmd/watchmaker.go) keeps |nsec_delta| < 1e9 so they
+        // run at most once. If a caller ever passes a >= 1e9 nsec delta this
+        // becomes O(offset) per call and slows the target; the robust fix is
+        // div/mod normalization as in fake_time.c.
         while (nsec_delta + tp->tv_nsec > billion) {
             sec_delta += 1;
             nsec_delta -= billion;
